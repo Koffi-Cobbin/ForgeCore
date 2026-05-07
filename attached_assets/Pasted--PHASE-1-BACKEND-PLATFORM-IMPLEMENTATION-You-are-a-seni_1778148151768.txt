@@ -442,7 +442,7 @@ The existing FileForge storage architecture should become the foundation of:
 apps/storage_service/
 ```
 
-The AI MUST:
+YOU MUST:
 
 * reuse existing storage abstractions where appropriate
 * preserve existing upload logic if architecturally sound
@@ -508,7 +508,7 @@ apps/authentication/
 apps/users/
 ```
 
-The AI MUST:
+YOU MUST:
 
 * analyze the existing authentication flow
 * preserve reusable logic

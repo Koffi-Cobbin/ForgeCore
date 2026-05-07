@@ -195,6 +195,16 @@ AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='')
 AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME', default='')
 AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='us-east-1')
 
+# FileForge-style storage configuration
+FILEFORGE_TEMP_DIR = BASE_DIR / 'media' / 'temp_uploads'
+FILEFORGE_DEFAULT_MAX_SYNC_SIZE = config('FILEFORGE_DEFAULT_MAX_SYNC_SIZE', default=5 * 1024 * 1024, cast=int)
+FILEFORGE_MAX_UPLOAD_SIZE = config('FILEFORGE_MAX_UPLOAD_SIZE', default=100 * 1024 * 1024, cast=int)
+# Per-provider max sync sizes (override per provider if needed)
+FILEFORGE_PROVIDER_MAX_SYNC_SIZE = {}
+# Environment-level provider credentials (merged with per-org StorageCredential records)
+# Example: {'google_drive': {'service_account_json': '...'}, 's3': {'aws_access_key_id': '...'}}
+FILEFORGE_PROVIDER_ENV_CREDENTIALS = {}
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
