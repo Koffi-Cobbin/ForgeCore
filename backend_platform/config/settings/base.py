@@ -195,6 +195,19 @@ AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='')
 AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME', default='')
 AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='us-east-1')
 
+# Whether to register periodic tasks on app startup (disable in tests)
+REGISTER_PERIODIC_TASKS = True
+
+# Periodic temp-file cleanup schedule (only active when TASK_MODE='django_q')
+# schedule_type: 'I'=minutes, 'H'=hourly, 'D'=daily, 'W'=weekly, 'C'=cron
+TEMP_CLEANUP_SCHEDULE = {
+    'name': 'storage.cleanup_temp_files',
+    'schedule_type': 'D',   # run once per day
+    'hours': 3,             # at 03:00 UTC
+    'repeats': -1,          # infinite
+    'replace_existing': True,
+}
+
 # FileForge-style storage configuration
 FILEFORGE_TEMP_DIR = BASE_DIR / 'media' / 'temp_uploads'
 FILEFORGE_DEFAULT_MAX_SYNC_SIZE = config('FILEFORGE_DEFAULT_MAX_SYNC_SIZE', default=5 * 1024 * 1024, cast=int)
