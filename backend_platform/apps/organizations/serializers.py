@@ -19,7 +19,11 @@ class OrganizationCreateSerializer(serializers.ModelSerializer):
         fields = ['name', 'slug', 'description', 'logo_url', 'website']
 
     def validate_slug(self, value):
-        if Organization.objects.filter(slug=value).exists():
+        # FIX: exclude the current instance when checking uniqueness (supports partial PATCH)
+        qs = Organization.objects.filter(slug=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
             raise serializers.ValidationError('An organization with this slug already exists.')
         return value
 

@@ -5,10 +5,12 @@ from apps.common.responses import success_response, created_response, no_content
 from apps.api_keys.serializers import APIKeySerializer, APIKeyCreateSerializer, APIKeyCreatedSerializer
 from apps.api_keys.services import APIKeyService
 from apps.organizations.services import OrganizationService
+from apps.authentication.permissions import IsOrganizationMember, IsOrganizationAdmin
 
 
 class APIKeyListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    # FIX: enforce membership — any org member can list/create keys
+    permission_classes = [IsAuthenticated, IsOrganizationMember]
 
     @extend_schema(responses=APIKeySerializer(many=True), summary='List API keys for an organization')
     def get(self, request, org_id):
@@ -36,7 +38,8 @@ class APIKeyListCreateView(APIView):
 
 
 class APIKeyDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    # FIX: only admins can revoke keys
+    permission_classes = [IsAuthenticated, IsOrganizationAdmin]
 
     @extend_schema(summary='Revoke an API key')
     def delete(self, request, org_id, key_id):

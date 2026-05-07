@@ -5,10 +5,12 @@ from apps.common.responses import success_response
 from apps.audit_logs.serializers import AuditLogSerializer
 from apps.audit_logs.services import AuditLogService
 from apps.organizations.services import OrganizationService
+from apps.authentication.permissions import IsOrganizationMember
 
 
 class AuditLogListView(APIView):
-    permission_classes = [IsAuthenticated]
+    # FIX: enforce org membership — only members can view org audit logs
+    permission_classes = [IsAuthenticated, IsOrganizationMember]
 
     @extend_schema(responses=AuditLogSerializer(many=True), summary='List audit logs for an organization')
     def get(self, request, org_id):

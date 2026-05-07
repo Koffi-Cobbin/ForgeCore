@@ -7,6 +7,7 @@ from apps.organizations.serializers import (
     MembershipSerializer, InviteMemberSerializer
 )
 from apps.organizations.services import OrganizationService
+from apps.authentication.permissions import IsOrganizationMember, IsOrganizationAdmin
 
 
 class OrganizationListCreateView(APIView):
@@ -27,7 +28,7 @@ class OrganizationListCreateView(APIView):
 
 
 class OrganizationDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsOrganizationMember]
 
     def get_org(self, org_id):
         return OrganizationService.get_organization(org_id)
@@ -39,15 +40,19 @@ class OrganizationDetailView(APIView):
 
     @extend_schema(request=OrganizationCreateSerializer, responses=OrganizationSerializer, summary='Update organization')
     def patch(self, request, org_id):
+        # FIX: require admin role to update
+        if not _is_admin(request.user, org_id):
+            from apps.common.responses import error_response
+            return error_response('PERMISSION_DENIED', 'Admin role required.', status_code=403)
         org = self.get_org(org_id)
-        serializer = OrganizationCreateSerializer(data=request.data, partial=True)
+        serializer = OrganizationCreateSerializer(org, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         org = OrganizationService.update_organization(org, serializer.validated_data)
         return success_response(data=OrganizationSerializer(org).data)
 
 
 class OrganizationMemberView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsOrganizationMember]
 
     @extend_schema(responses=MembershipSerializer(many=True), summary='List organization members')
     def get(self, request, org_id):
@@ -58,6 +63,10 @@ class OrganizationMemberView(APIView):
 
     @extend_schema(request=InviteMemberSerializer, responses=MembershipSerializer, summary='Invite member')
     def post(self, request, org_id):
+        # FIX: only admins/owners can invite
+        if not _is_admin(request.user, org_id):
+            from apps.common.responses import error_response
+            return error_response('PERMISSION_DENIED', 'Admin role required to invite members.', status_code=403)
         org = OrganizationService.get_organization(org_id)
         serializer = InviteMemberSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -70,10 +79,20 @@ class OrganizationMemberView(APIView):
 
 
 class OrganizationMemberDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsOrganizationAdmin]
 
     @extend_schema(summary='Remove member from organization')
     def delete(self, request, org_id, user_id):
         org = OrganizationService.get_organization(org_id)
         OrganizationService.remove_member(org, user_id, request.user)
         return no_content_response()
+
+
+def _is_admin(user, org_id) -> bool:
+    from apps.organizations.models import Membership
+    return Membership.objects.filter(
+        organization_id=org_id,
+        user=user,
+        role__in=['owner', 'admin'],
+        is_active=True,
+    ).exists()

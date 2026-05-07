@@ -1,17 +1,4 @@
-"""Authentication service layer for ForgeCore.
-
-All authentication logic lives here. Views and serializers must never
-touch tokens, password hashing, or authentication backends directly.
-
-This service is organisation-aware: login returns a summary of the
-user's organization memberships so clients can bootstrap their session
-without extra API calls.
-
-Extensibility points:
-  - MFAHook.is_required() / MFAHook.verify(): pluggable MFA verification.
-  - OAuthHook.authenticate():                  pluggable OAuth provider auth.
-  - TokenService / ClaimsRegistry:             pluggable JWT claim embedding.
-"""
+"""Authentication service layer for ForgeCore."""
 from __future__ import annotations
 
 import hashlib
@@ -33,21 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 class AuthService:
-    """Central authentication service.
-
-    Responsibilities:
-      - User registration and email verification dispatch
-      - Email+password login with optional MFA check
-      - JWT token issuance via TokenService (never directly)
-      - Token refresh and logout (blacklisting)
-      - Password reset flow (request + confirm)
-      - OAuth authentication hook delegation
-
-    NOT responsible for:
-      - Serialization / deserialization
-      - HTTP responses
-      - Organization management (see OrganizationService)
-    """
 
     # ------------------------------------------------------------------
     # Registration
@@ -55,11 +27,6 @@ class AuthService:
 
     @staticmethod
     def register(email: str, password: str, first_name: str = "", last_name: str = ""):
-        """Create a new user account and dispatch a verification email.
-
-        Raises:
-            ValidationError: if the email is already registered.
-        """
         from apps.users.models import User
 
         if User.objects.filter(email=email).exists():
@@ -98,27 +65,6 @@ class AuthService:
 
     @staticmethod
     def login(email: str, password: str, mfa_code: str | None = None, request=None) -> dict:
-        """Authenticate a user and return a JWT pair + session context.
-
-        Raises:
-            ValidationError: for invalid credentials, inactive account,
-                             or incomplete MFA.
-
-        Returns:
-            {
-                "access":        str,
-                "refresh":       str,
-                "user":          User instance,
-                "organizations": list[{id, name, role}],
-                "mfa_pending":   bool
-            }
-
-            When MFA is required but no valid code is provided:
-            {
-                "mfa_pending": True,
-                "mfa_token":   str  (short-lived partial-auth token)
-            }
-        """
         user = authenticate(request=request, email=email, password=password)
 
         if user is None:
@@ -127,8 +73,6 @@ class AuthService:
         if not user.is_active:
             raise ValidationError("This account has been deactivated.", code="account_inactive")
 
-        # MFA gate — if enabled and code not yet provided, return a
-        # partial-auth token instead of a full session.
         if MFAHook.is_required(user):
             if not mfa_code or not MFAHook.verify(user, mfa_code):
                 return {
@@ -149,10 +93,10 @@ class AuthService:
     def _get_org_context(user) -> list[dict]:
         """Return a lightweight org membership summary for the login response."""
         try:
-            from apps.organizations.models import OrganizationMembership
+            from apps.organizations.models import Membership  # FIX: was OrganizationMembership
             memberships = (
-                OrganizationMembership.objects
-                .filter(user=user)
+                Membership.objects
+                .filter(user=user, is_active=True)
                 .select_related("organization")
             )
             return [
@@ -176,11 +120,6 @@ class AuthService:
 
     @staticmethod
     def refresh_token(refresh_token_str: str) -> dict[str, str]:
-        """Rotate a refresh token and return a new pair.
-
-        Raises:
-            ValidationError: if the token is invalid or blacklisted.
-        """
         try:
             return TokenService.refresh(refresh_token_str)
         except TokenError as exc:
@@ -190,11 +129,6 @@ class AuthService:
 
     @staticmethod
     def logout(refresh_token_str: str) -> None:
-        """Blacklist a refresh token to complete logout.
-
-        Raises:
-            ValidationError: if the token is invalid.
-        """
         try:
             TokenService.blacklist(refresh_token_str)
             logger.info("AuthService.logout: refresh token blacklisted")
@@ -209,11 +143,6 @@ class AuthService:
 
     @staticmethod
     def verify_email(token: str):
-        """Mark the user's email as verified.
-
-        Raises:
-            ValidationError: if the token is not found.
-        """
         from apps.users.models import User
 
         try:
@@ -229,11 +158,6 @@ class AuthService:
 
     @staticmethod
     def resend_verification_email(email: str) -> None:
-        """Resend the verification email for an unverified account.
-
-        Silently does nothing if the account is already verified or not found
-        (prevents email enumeration).
-        """
         from apps.users.models import User
 
         try:
@@ -255,11 +179,6 @@ class AuthService:
 
     @staticmethod
     def request_password_reset(email: str) -> None:
-        """Generate a reset token and dispatch a reset email.
-
-        Always succeeds regardless of whether the email exists
-        (prevents user enumeration via timing attacks).
-        """
         from apps.users.models import User
 
         try:
@@ -275,9 +194,6 @@ class AuthService:
         ])
         TaskDispatcher.dispatch(
             AuthService._send_password_reset_email, str(user.id), raw_token
-        )
-        logger.info(
-            "AuthService.request_password_reset: reset dispatched for user %s", user.pk
         )
 
     @staticmethod
@@ -295,12 +211,6 @@ class AuthService:
 
     @staticmethod
     def reset_password(token: str, new_password: str):
-        """Apply a new password using a valid reset token.
-
-        Raises:
-            ValidationError: if the token is invalid/expired or the
-                             password fails Django's validators.
-        """
         from apps.users.models import User
         from django.contrib.auth.password_validation import validate_password
         from django.core.exceptions import ValidationError as DjangoValidationError
@@ -334,14 +244,6 @@ class AuthService:
 
     @staticmethod
     def login_oauth(provider: str, token: str, request=None) -> dict:
-        """Authenticate via an OAuth provider and return a JWT pair.
-
-        Delegates to OAuthHook which routes to the registered provider backend.
-
-        Raises:
-            ValueError:      if the provider is not registered.
-            ValidationError: if the OAuth token is invalid.
-        """
         try:
             user = OAuthHook.authenticate(provider, token, request=request)
         except ValueError as exc:
@@ -357,9 +259,6 @@ class AuthService:
             )
 
         tokens = TokenService.for_user(user)
-        logger.info(
-            "AuthService.login_oauth: user %s authenticated via %s", user.pk, provider
-        )
         return {
             **tokens,
             "user": user,

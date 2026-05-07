@@ -17,6 +17,7 @@ def _get_provider():
 
 
 class EmailService:
+
     @staticmethod
     def send_email(to_email, subject, body_html, body_text=None, from_email=None,
                    organization=None, sent_by=None, template=None, metadata=None):
@@ -31,38 +32,40 @@ class EmailService:
         )
         TaskDispatcher.dispatch(
             EmailService._send_email_task,
-            log.id, to_email, subject, body_html, body_text, from_email
+            str(log.id), to_email, subject, body_html, body_text, from_email
         )
         return log
 
     @staticmethod
     def _send_email_task(log_id, to_email, subject, body_html, body_text, from_email):
+        """Execute email send and update the EmailLog record."""
         try:
-            log = EmailLog.objects.get(id=log_id)
             provider = _get_provider()
             provider.send(
                 to_email=to_email,
                 subject=subject,
                 body_html=body_html,
                 body_text=body_text,
-                from_email=from_email
+                from_email=from_email,
             )
-            log.status = 'sent'
-            log.provider = provider.get_provider_name()
-            log.save()
+            # Update log only if we have a valid log_id
+            if log_id:
+                EmailLog.objects.filter(id=log_id).update(
+                    status='sent',
+                    provider=provider.get_provider_name(),
+                )
             logger.info(f"Email sent to {to_email}: {subject}")
         except Exception as e:
             logger.error(f"Email failed to {to_email}: {e}")
-            try:
-                log = EmailLog.objects.get(id=log_id)
-                log.status = 'failed'
-                log.error_message = str(e)
-                log.save()
-            except Exception:
-                pass
+            if log_id:
+                EmailLog.objects.filter(id=log_id).update(
+                    status='failed',
+                    error_message=str(e)[:2000],
+                )
 
     @staticmethod
     def send_verification_email(user, token):
+        """Send email verification — does NOT create an EmailLog (system email)."""
         subject = 'Verify your email address'
         body_html = f"""
         <h2>Email Verification</h2>
@@ -72,9 +75,6 @@ class EmailService:
         <p>This token will expire in 24 hours.</p>
         """
         body_text = f"Your email verification token: {token}"
-        EmailService._send_email_task(
-            None, user.email, subject, body_html, body_text, None
-        ) if True else None
         provider = _get_provider()
         try:
             provider.send(
@@ -89,6 +89,7 @@ class EmailService:
 
     @staticmethod
     def send_password_reset_email(user, token):
+        """Send password reset — does NOT create an EmailLog (system email)."""
         subject = 'Password Reset Request'
         body_html = f"""
         <h2>Password Reset</h2>

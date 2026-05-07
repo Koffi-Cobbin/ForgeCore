@@ -52,10 +52,10 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_organizations(self, user) -> list[dict]:
         try:
-            from apps.organizations.models import OrganizationMembership
+            from apps.organizations.models import Membership  # FIX: was OrganizationMembership
             memberships = (
-                OrganizationMembership.objects
-                .filter(user=user)
+                Membership.objects
+                .filter(user=user, is_active=True)
                 .select_related("organization")
             )
             return [
